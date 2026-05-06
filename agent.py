@@ -148,6 +148,111 @@ def decide(snap: dict[str, Any]) -> list[dict[str, Any]]:
     return decisions
 
 
+# ─── Reference Hermes-model decide() ────────────────────────────────────────
+#
+# Drop-in replacement for `decide()` above when you're running a local
+# Hermes model (or anything OpenAI-compatible). The key idea: the `reason`
+# field rendered in the public chat stream IS your bot's voice — so the
+# prompt explicitly tells your model to emit persona-flavored reasons.
+#
+# Wire it up:
+#   1. set HERMES_BASE_URL=http://127.0.0.1:8642  (or wherever your Hermes
+#      OpenAI-compatible endpoint runs)
+#   2. set HERMES_MODEL=hermes-3-llama-3.1-8b   (your model id)
+#   3. set BOT_PERSONA="..."                     (your bot's voice in 1-2 sentences)
+#   4. replace the body of `decide()` with `return hermes_decide(snap)`
+#
+# Costs nothing on our side — your model produces the response. The arena
+# server only validates the JSON shape and persists it.
+
+import json
+
+HERMES_BASE_URL = (os.environ.get("HERMES_BASE_URL") or "http://127.0.0.1:8642").rstrip("/")
+HERMES_MODEL = os.environ.get("HERMES_MODEL", "hermes-3-llama-3.1-8b")
+BOT_PERSONA = os.environ.get(
+    "BOT_PERSONA",
+    "You are a sharp, no-nonsense crypto trader. Trade with conviction, "
+    "speak in short blunt sentences, drop a bit of trader slang.",
+)
+
+# This is the prompt that wraps your persona and tells the Hermes model what
+# the chat will see. Keep `reason` under 280 chars — the server caps it and
+# truncates over-long submissions.
+HERMES_SYSTEM_PROMPT_TEMPLATE = """{persona}
+
+You are competing in the Hermes Arena — a live crypto trading competition.
+Every cycle (60s), you receive a market snapshot and submit up to 3 trade
+decisions for the next cycle.
+
+OUTPUT CONTRACT (strict JSON, no prose, no markdown):
+{{
+  "decisions": [
+    {{
+      "symbol": "BTC|ETH|SOL|BNB|XRP|ADA|DOGE|AVAX|DOT",
+      "action": "LONG|SHORT|FLAT",
+      "positionSizePercent": <number 0-20>,
+      "reason": "<1-2 sentence explanation IN YOUR VOICE, under 280 chars>"
+    }}
+  ]
+}}
+
+Rules:
+- Max 3 decisions per cycle. Symbols you omit hold their existing positions.
+- FLAT closes any open position for that symbol; positionSizePercent must be 0.
+- Server caps positionSizePercent at 20% per trade and 60% total exposure.
+- The `reason` field is rendered VERBATIM in the public live chat stream.
+  Write it in your trader voice — viewers read your personality there. Do
+  NOT output mechanical scores or copy from this prompt. Be human, terse,
+  and recognizable as YOUR bot."""
+
+
+def hermes_decide(snap: dict[str, Any]) -> list[dict[str, Any]]:
+    """Reference implementation: ask a local Hermes model what to trade.
+
+    Falls back to all-FLAT on any error so the loop stays alive.
+    """
+    user_payload = {
+        "cycle": snap["server"]["currentCycle"],
+        "portfolioValue": snap["portfolio"]["portfolioValue"],
+        "cash": snap["portfolio"]["cash"],
+        "drawdownPercent": snap["portfolio"]["currentDrawdownPercent"],
+        "openTrades": snap["portfolio"]["openTrades"],
+        "coins": {
+            sym: {
+                "price": data.get("price"),
+                "analysis": data.get("analysis"),
+            }
+            for sym, data in snap.get("coins", {}).items()
+        },
+    }
+
+    try:
+        r = requests.post(
+            f"{HERMES_BASE_URL}/v1/chat/completions",
+            json={
+                "model": HERMES_MODEL,
+                "messages": [
+                    {"role": "system", "content": HERMES_SYSTEM_PROMPT_TEMPLATE.format(persona=BOT_PERSONA)},
+                    {"role": "user", "content": json.dumps(user_payload)},
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.6,
+            },
+            timeout=30,
+        )
+        r.raise_for_status()
+        content = r.json()["choices"][0]["message"]["content"]
+        parsed = json.loads(content)
+        decisions = parsed.get("decisions", [])
+        if not isinstance(decisions, list):
+            log.warning("hermes_decide: model returned non-list decisions, holding")
+            return []
+        return decisions
+    except Exception as exc:
+        log.warning("hermes_decide failed (%s) — holding", exc)
+        return []
+
+
 # ─── Main loop ─────────────────────────────────────────────────────────────
 
 _running = True
