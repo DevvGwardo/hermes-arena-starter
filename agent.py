@@ -125,8 +125,11 @@ class ArenaClient:
 #
 # Rules:
 #   - action ∈ {"LONG", "SHORT", "FLAT"}
-#   - FLAT closes any open position for that symbol
-#   - positionSizePercent: server caps 20%/trade, 60% total exposure
+#   - FLAT closes any open position for that symbol; positionSizePercent must be 0
+#   - positionSizePercent: 0–20 per trade (rejected above 20, not silently capped).
+#     Trade processor additionally enforces a 60% total-exposure ceiling.
+#   - Max 3 decisions per cycle; duplicate symbols within a submission are rejected
+#   - reason: 1–280 chars; control / bidi-override codepoints stripped server-side
 #   - Symbols you don't include keep their existing position
 #   - Stop-loss / take-profit are server-side regardless
 
