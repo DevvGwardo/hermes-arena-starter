@@ -151,30 +151,51 @@ def decide(snap: dict[str, Any]) -> list[dict[str, Any]]:
 
 # ─── Hermes-model decide() ──────────────────────────────────────────────────
 #
-# Default decision engine — uses your local Hermes model (or anything
-# OpenAI-compatible). The key idea: the `reason` field rendered in the
-# public chat stream IS your bot's voice, so the prompt explicitly tells
-# your model to emit persona-flavored reasons.
+# Default decision engine — talks to your locally-running Hermes Agent
+# (https://github.com/NousResearch/hermes-agent) via its OpenAI-compatible
+# gateway. You start the gateway once with:
+#
+#     hermes gateway setup        # one-time wizard
+#     hermes gateway start        # boots the HTTP server at 127.0.0.1:8642
+#
+# Whatever upstream model you've selected with `hermes model` is what
+# answers — the gateway presents it under a single canonical id of
+# "hermes-agent" on /v1/models, regardless of whether it's routing to
+# Nous Portal, OpenRouter, OpenAI, or anything else.
+#
+# The key idea: the `reason` field rendered in the public chat stream IS
+# your bot's voice, so the prompt explicitly tells your model to emit
+# persona-flavored reasons.
 #
 # Required env (defaults shown):
-#   HERMES_BASE_URL=http://127.0.0.1:8642   # your Hermes OpenAI-compat endpoint
-#   HERMES_MODEL=hermes-3-llama-3.1-8b      # your model id
+#   HERMES_BASE_URL=http://127.0.0.1:8642   # your Hermes gateway (the value
+#                                           # printed by `hermes gateway start`)
+#   HERMES_MODEL=hermes-agent               # canonical id; don't change
+#                                           # unless you point at a different
+#                                           # OpenAI-compat server
 #   BOT_PERSONA="You are a sharp, no-nonsense crypto trader. Trade with
 #                conviction, speak in short blunt sentences, drop a bit
 #                of trader slang."           # your bot's voice
 #
-# If the endpoint is unreachable (Hermes not running, wrong URL), this
+# Optional:
+#   HERMES_API_KEY=<key>                    # only if you set API_SERVER_KEY
+#                                           # in the gateway (network-exposed
+#                                           # gateways require it). Localhost
+#                                           # default needs no key.
+#
+# If the endpoint is unreachable (gateway not running, wrong URL), this
 # returns an empty list and the bot HOLDS its current positions instead
 # of churning — the loop logs "hermes_decide failed (reason) — holding"
 # so you can spot it.
 #
-# Costs nothing on the arena side — your model produces the response on
-# your machine. The arena server only validates the JSON and persists.
+# Costs nothing on the arena side — your gateway calls your chosen
+# upstream model. The arena server only validates the JSON and persists.
 
 import json
 
 HERMES_BASE_URL = (os.environ.get("HERMES_BASE_URL") or "http://127.0.0.1:8642").rstrip("/")
-HERMES_MODEL = os.environ.get("HERMES_MODEL", "hermes-3-llama-3.1-8b")
+HERMES_MODEL = os.environ.get("HERMES_MODEL", "hermes-agent")
+HERMES_API_KEY = os.environ.get("HERMES_API_KEY") or None  # None when local + no auth
 BOT_PERSONA = os.environ.get(
     "BOT_PERSONA",
     "You are a sharp, no-nonsense crypto trader. Trade with conviction, "
@@ -232,9 +253,17 @@ def hermes_decide(snap: dict[str, Any]) -> list[dict[str, Any]]:
         },
     }
 
+    headers: dict[str, str] = {}
+    # The gateway is unauth on localhost by default; only required when
+    # API_SERVER_KEY is set on the gateway side (typical for non-loopback
+    # binds). We pass it through verbatim as a Bearer token.
+    if HERMES_API_KEY:
+        headers["Authorization"] = f"Bearer {HERMES_API_KEY}"
+
     try:
         r = requests.post(
             f"{HERMES_BASE_URL}/v1/chat/completions",
+            headers=headers,
             json={
                 "model": HERMES_MODEL,
                 "messages": [

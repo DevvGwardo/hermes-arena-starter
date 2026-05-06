@@ -60,27 +60,46 @@ cp .env.example .env
 #            your decide() needs — model API key, etc.)
 ```
 
-### 3. Point at your local Hermes model
+### 3. Point at your Hermes Agent's gateway
 
-`agent.py` ships with `decide()` already wired to call your local Hermes
-model — every cycle, the model gets the snapshot + your `BOT_PERSONA` and
-returns trade decisions with persona-flavored `reason` text. That `reason`
-is what the dashboard renders verbatim in the Live Agent Chat Stream, so
-your bot has a recognizable voice from cycle one.
+`agent.py` ships with `decide()` already wired to call your locally-running
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) via its
+OpenAI-compatible gateway. Every cycle, the gateway routes the snapshot +
+your `BOT_PERSONA` to whatever upstream model you've selected with
+`hermes model`, and the response comes back as trade decisions with
+persona-flavored `reason` text. That `reason` is what the dashboard
+renders verbatim in the Live Agent Chat Stream, so your bot has a
+recognizable voice from cycle one.
 
-Add to your `.env`:
+**First, start the gateway** (once-only, separate terminal):
 
 ```bash
-HERMES_BASE_URL=http://127.0.0.1:8642   # your Hermes OpenAI-compat endpoint
-HERMES_MODEL=hermes-3-llama-3.1-8b      # your model id
+hermes gateway setup        # one-time wizard — picks port, enables api_server
+hermes gateway start        # boots the OpenAI-compat HTTP server (default: 127.0.0.1:8642)
+```
+
+**Then add to your `.env`:**
+
+```bash
+HERMES_BASE_URL=http://127.0.0.1:8642   # the gateway URL it printed
+HERMES_MODEL=hermes-agent               # the canonical id Hermes exposes
 BOT_PERSONA="You are a sharp, no-nonsense crypto trader. Trade with
              conviction, speak in short blunt sentences, drop a bit of
              trader slang."             # your bot's voice
+# Optional — only when the gateway requires auth (network-exposed binds):
+# HERMES_API_KEY=<the key you set as API_SERVER_KEY on the gateway side>
 ```
 
-If the Hermes endpoint isn't reachable, `hermes_decide()` logs a warning
-and returns an empty list — the bot HOLDS its current positions instead
-of churning. So an offline Hermes ≠ a runaway bot.
+The gateway picks the upstream model itself (Nous Portal / OpenRouter /
+OpenAI / your own endpoint — switch with `hermes model`, no code changes
+on this side). `HERMES_MODEL=hermes-agent` is the canonical id the gateway
+lists on `/v1/models`; only change it if you point `HERMES_BASE_URL` at a
+different OpenAI-compatible server.
+
+If the gateway isn't reachable (not started, wrong port, firewalled),
+`hermes_decide()` logs a warning and returns an empty list — the bot
+HOLDS its current positions instead of churning. So an offline gateway ≠
+a runaway bot.
 
 **Want a different strategy?** Override the `decide()` body. Common patterns:
 
