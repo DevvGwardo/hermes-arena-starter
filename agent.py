@@ -140,13 +140,24 @@ def decide(snap: dict[str, Any]) -> list[dict[str, Any]]:
     BOT_PERSONA and writes `reason` strings IN YOUR VOICE — that's what
     viewers see in the dashboard's Live Agent Chat Stream.
 
+    Cadence guarantee: returns AT LEAST one decision every cycle so the
+    chat stream stays alive even when the structured decision call yields
+    nothing. If hermes_decide() comes back empty (gateway down, model
+    refused to commit, malformed JSON), we synthesize a heartbeat — a
+    FLAT no-op on a symbol you don't currently hold, with a market
+    commentary in your persona's voice as the `reason`.
+
     Override by replacing the body. Common alternatives:
       - hand-rolled momentum / mean-reversion / TA heuristics
       - calls to OpenAI / Anthropic / your fine-tuned model
       - hybrid: deterministic strategy + LLM-rewritten `reason` (decorate
         each decision via a second Hermes call before submitting)
     """
-    return hermes_decide(snap)
+    decisions = hermes_decide(snap)
+    if decisions:
+        return decisions
+    heartbeat = _synthesize_heartbeat(snap)
+    return [heartbeat] if heartbeat else []
 
 
 # ─── Hermes-model decide() ──────────────────────────────────────────────────
@@ -286,6 +297,114 @@ def hermes_decide(snap: dict[str, Any]) -> list[dict[str, Any]]:
     except Exception as exc:
         log.warning("hermes_decide failed (%s) — holding", exc)
         return []
+
+
+# ─── Heartbeat fallback ─────────────────────────────────────────────────────
+#
+# Every cycle, the bot should put SOMETHING on the chat stream — even if
+# the structured decision call refused to commit, the gateway is offline,
+# or the model returned malformed JSON. Otherwise the dashboard chat goes
+# eerily silent for the operator + viewers between actual trades.
+#
+# Heartbeat strategy: pick a symbol the bot does NOT currently hold, send
+# action=FLAT (which is a no-op for a non-held symbol — it doesn't open or
+# close anything), and use a short market-commentary sentence in BOT_PERSONA
+# voice as the reason. The submission shows up in the chat; positions are
+# unaffected.
+
+# Same nine symbols the arena server validates against. Hard-coded so this
+# file works without re-reading the snapshot's coin list.
+_SUPPORTED_SYMBOLS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT"]
+
+_HEARTBEAT_FALLBACK_REASONS = [
+    "Watching the tape. No setup worth taking yet.",
+    "Quiet here. Holding.",
+    "Tape's chop. Letting it tell me where it wants to go.",
+    "No signal I trust. Sitting on hands.",
+    "Nothing clean. Waiting.",
+]
+
+
+def _hermes_market_commentary(snap: dict[str, Any]) -> Optional[str]:
+    """Ask Hermes for ONE short sentence of market color in BOT_PERSONA
+    voice. No tool calls, no JSON — just plain prose for the chat stream.
+    Returns None on any error so the caller can fall back to a static line.
+    """
+    headers: dict[str, str] = {}
+    if HERMES_API_KEY:
+        headers["Authorization"] = f"Bearer {HERMES_API_KEY}"
+
+    coin_brief = {
+        sym: data.get("price")
+        for sym, data in snap.get("coins", {}).items()
+        if isinstance(data.get("price"), (int, float))
+    }
+    open_syms = list((snap.get("portfolio") or {}).get("openTrades", {}).keys())
+
+    user_msg = (
+        "Write ONE short sentence (max 240 chars) commenting on the current "
+        "crypto market in your trading voice. Do NOT propose a trade — just "
+        "narrate what you're watching. Output ONLY the sentence — no quotes, "
+        "no preamble, no JSON, no markdown.\n\n"
+        f"Prices: {json.dumps(coin_brief)}\n"
+        f"Currently holding: {open_syms or 'cash'}\n"
+    )
+
+    try:
+        r = requests.post(
+            f"{HERMES_BASE_URL}/v1/chat/completions",
+            headers=headers,
+            json={
+                "model": HERMES_MODEL,
+                "messages": [
+                    {"role": "system", "content": BOT_PERSONA},
+                    {"role": "user", "content": user_msg},
+                ],
+                "temperature": 0.85,
+                "max_tokens": 120,
+            },
+            timeout=20,
+        )
+        r.raise_for_status()
+        text = r.json()["choices"][0]["message"]["content"]
+        if not isinstance(text, str):
+            return None
+        # Strip surrounding quotes / whitespace and clamp to the server's
+        # 280-char reason cap.
+        cleaned = text.strip().strip('"').strip("'").strip()
+        return cleaned[:280] if cleaned else None
+    except Exception as exc:
+        log.warning("market commentary call failed (%s) — using fallback", exc)
+        return None
+
+
+def _synthesize_heartbeat(snap: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """Build a no-op FLAT decision on an unheld symbol so the chat ticks
+    every cycle without disturbing positions. Returns None if no symbols
+    are available (would only happen if the agent somehow held all 9).
+    """
+    held = set((snap.get("portfolio") or {}).get("openTrades", {}).keys())
+    candidates = [s for s in _SUPPORTED_SYMBOLS if s not in held]
+    if not candidates:
+        return None
+
+    # Stable pick — same symbol per snapshot keeps the chat readable.
+    target = candidates[0]
+
+    reason = _hermes_market_commentary(snap)
+    if not reason:
+        # Cycle through the static reasons by current cycle number so the
+        # heartbeat doesn't repeat the exact same line back-to-back when
+        # Hermes is offline.
+        idx = int(snap.get("server", {}).get("currentCycle", 0)) % len(_HEARTBEAT_FALLBACK_REASONS)
+        reason = _HEARTBEAT_FALLBACK_REASONS[idx]
+
+    return {
+        "symbol": target,
+        "action": "FLAT",
+        "positionSizePercent": 0,
+        "reason": reason,
+    }
 
 
 # ─── Main loop ─────────────────────────────────────────────────────────────
