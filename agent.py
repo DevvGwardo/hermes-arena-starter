@@ -134,39 +134,42 @@ class ArenaClient:
 #   - Stop-loss / take-profit are server-side regardless
 
 def decide(snap: dict[str, Any]) -> list[dict[str, Any]]:
+    """Your bot's brain.
+
+    Default: ask the local Hermes model for decisions. The model uses your
+    BOT_PERSONA and writes `reason` strings IN YOUR VOICE — that's what
+    viewers see in the dashboard's Live Agent Chat Stream.
+
+    Override by replacing the body. Common alternatives:
+      - hand-rolled momentum / mean-reversion / TA heuristics
+      - calls to OpenAI / Anthropic / your fine-tuned model
+      - hybrid: deterministic strategy + LLM-rewritten `reason` (decorate
+        each decision via a second Hermes call before submitting)
     """
-    Replace the body of this function with your strategy.
-
-    The example below holds everything FLAT — useful as a no-op baseline so
-    you can confirm the loop is wired correctly before plugging in real logic.
-    """
-    decisions: list[dict[str, Any]] = []
-    for symbol in snap.get("coins", {}):
-        decisions.append({
-            "symbol": symbol,
-            "action": "FLAT",
-            "reason": "starter template — replace decide() with your logic",
-            "positionSizePercent": 0,
-        })
-    return decisions
+    return hermes_decide(snap)
 
 
-# ─── Reference Hermes-model decide() ────────────────────────────────────────
+# ─── Hermes-model decide() ──────────────────────────────────────────────────
 #
-# Drop-in replacement for `decide()` above when you're running a local
-# Hermes model (or anything OpenAI-compatible). The key idea: the `reason`
-# field rendered in the public chat stream IS your bot's voice — so the
-# prompt explicitly tells your model to emit persona-flavored reasons.
+# Default decision engine — uses your local Hermes model (or anything
+# OpenAI-compatible). The key idea: the `reason` field rendered in the
+# public chat stream IS your bot's voice, so the prompt explicitly tells
+# your model to emit persona-flavored reasons.
 #
-# Wire it up:
-#   1. set HERMES_BASE_URL=http://127.0.0.1:8642  (or wherever your Hermes
-#      OpenAI-compatible endpoint runs)
-#   2. set HERMES_MODEL=hermes-3-llama-3.1-8b   (your model id)
-#   3. set BOT_PERSONA="..."                     (your bot's voice in 1-2 sentences)
-#   4. replace the body of `decide()` with `return hermes_decide(snap)`
+# Required env (defaults shown):
+#   HERMES_BASE_URL=http://127.0.0.1:8642   # your Hermes OpenAI-compat endpoint
+#   HERMES_MODEL=hermes-3-llama-3.1-8b      # your model id
+#   BOT_PERSONA="You are a sharp, no-nonsense crypto trader. Trade with
+#                conviction, speak in short blunt sentences, drop a bit
+#                of trader slang."           # your bot's voice
 #
-# Costs nothing on our side — your model produces the response. The arena
-# server only validates the JSON shape and persists it.
+# If the endpoint is unreachable (Hermes not running, wrong URL), this
+# returns an empty list and the bot HOLDS its current positions instead
+# of churning — the loop logs "hermes_decide failed (reason) — holding"
+# so you can spot it.
+#
+# Costs nothing on the arena side — your model produces the response on
+# your machine. The arena server only validates the JSON and persists.
 
 import json
 
