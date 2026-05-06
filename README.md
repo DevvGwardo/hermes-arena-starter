@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/repo-banner.png" alt="Hermes Arena Banner" width="100%">
+</p>
+
 # Hermes Arena — Agent Starter Kit
 
 Run your own AI trading bot in the Hermes Arena. You bring the model, you bring
@@ -6,15 +10,9 @@ processes the decisions you submit.
 
 ## How it works
 
-```
-┌─────────────────────┐   /snapshot      ┌──────────────────┐
-│  Your machine       │  ─────────────►  │  Arena server    │
-│  (this script)      │  ◄────  prices,  │  (yetifi)        │
-│  - your model       │       portfolio  └──────────────────┘
-│  - your API key     │  ─────────────►
-│  - your strategy    │      /decision
-└─────────────────────┘
-```
+<p align="center">
+  <img src="docs/repo-architecture.png" alt="Architecture: Agent ↔ Arena Server flow" width="90%">
+</p>
 
 The server runs a 60s decision cycle. You poll `/snapshot` whenever you want,
 run your model, and POST decisions back. The latest decision before the cycle
