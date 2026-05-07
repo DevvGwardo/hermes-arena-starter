@@ -673,9 +673,17 @@ def run_one_cycle(
     state: StrategyState,
     telemetry: Telemetry,
     last_submitted_cycle: int,
+    dry_run: bool = False,
 ) -> int:
     """Returns the cycle number we submitted for, or last_submitted_cycle
-    if we skipped (rate-limited, no new cycle, or any failure)."""
+    if we skipped (rate-limited, no new cycle, or any failure).
+
+    When dry_run is True, every step (snapshot, strategy, narration) runs
+    normally but the final POST to /decision is skipped. The would-be
+    payload is logged so operators can see what v2 *would* have sent. The
+    cycle counter still advances locally so dry-run loops behave like
+    real ones — useful for safe end-to-end testing on a live agent.
+    """
 
     telemetry.incr("cycles_seen")
 
@@ -737,6 +745,34 @@ def run_one_cycle(
     )
 
     payload = [d.to_payload() for d in decisions]
+
+    decision_summary = ", ".join(
+        f"{d.symbol} {d.action}{'' if d.action == 'FLAT' else f' {d.position_size_percent:.0f}%'}"
+        for d in decisions
+    )
+    portfolio_value = float((snap.get("portfolio") or {}).get("portfolioValue", 0) or 0)
+    drawdown_percent = float(
+        (snap.get("portfolio") or {}).get("currentDrawdownPercent", 0) or 0
+    )
+
+    if dry_run:
+        # Tally the action mix as if we had submitted, so dry-run telemetry
+        # matches what a live run would surface. Don't bump cycles_submitted —
+        # use a separate counter so the two modes are distinguishable.
+        telemetry.incr("cycles_dry_run")
+        for d in decisions:
+            telemetry.record_action(d.action)
+        log.info(
+            "cycle %d DRY-RUN (would submit): %s | NAV=$%.2f, dd=%.2f%%",
+            accepting,
+            decision_summary,
+            portfolio_value,
+            drawdown_percent,
+        )
+        for d in decisions:
+            log.info("  → %s", json.dumps(d.to_payload()))
+        return accepting
+
     try:
         resp = client.submit(payload, timeout=submit_timeout)
     except requests.RequestException as exc:
@@ -751,12 +787,9 @@ def run_one_cycle(
     log.info(
         "cycle %s submitted: %s | NAV=$%.2f, dd=%.2f%%, replaced=%s",
         resp.get("targetCycle", accepting),
-        ", ".join(
-            f"{d.symbol} {d.action}{'' if d.action == 'FLAT' else f' {d.position_size_percent:.0f}%'}"
-            for d in decisions
-        ),
-        float((snap.get("portfolio") or {}).get("portfolioValue", 0) or 0),
-        float((snap.get("portfolio") or {}).get("currentDrawdownPercent", 0) or 0),
+        decision_summary,
+        portfolio_value,
+        drawdown_percent,
         resp.get("replaced"),
     )
     return accepting
@@ -765,6 +798,15 @@ def run_one_cycle(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hermes Arena agent v2")
     parser.add_argument("--once", action="store_true", help="Run one cycle and exit")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Run normally (snapshot, strategy, narration) but skip the "
+            "final POST to /decision. The would-be payload is logged. "
+            "Combine with --once for a single-cycle smoke test."
+        ),
+    )
     args = parser.parse_args()
 
     cfg = Config.from_env()
@@ -777,20 +819,22 @@ def main() -> None:
 
     log.info(
         "agent_v2 starting: agent=%s base=%s interval=%ds dd_limit=%.1f%% "
-        "exposure_cap=%.1f%% narration=%s",
+        "exposure_cap=%.1f%% narration=%s%s",
         cfg.agent_id,
         cfg.base_url,
         cfg.interval_sec,
         cfg.drawdown_limit_pct,
         cfg.max_total_exposure_pct,
         "on" if cfg.hermes_base_url else "off",
+        " [DRY-RUN: no submissions will be posted]" if args.dry_run else "",
     )
 
     last_submitted_cycle = -1
 
     while _running:
         last_submitted_cycle = run_one_cycle(
-            client, cfg, state, telemetry, last_submitted_cycle
+            client, cfg, state, telemetry, last_submitted_cycle,
+            dry_run=args.dry_run,
         )
         telemetry.maybe_dump(last_submitted_cycle, cfg.telemetry_every)
 

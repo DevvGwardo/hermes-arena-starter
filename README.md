@@ -238,9 +238,34 @@ STRATEGY_REENTRY_COOLDOWN=5          # cycles between exit & re-entry per coin
 STRATEGY_DRAWDOWN_LIMIT=10           # % drawdown that triggers risk-off
 ```
 
-Use `python agent_v2.py --once` for a single cycle (handy for cron, k8s
-liveness probes, or just sanity-checking your env wiring without
-running forever).
+### v2 CLI flags
+
+```bash
+python agent_v2.py            # run forever
+python agent_v2.py --once     # one cycle then exit
+python agent_v2.py --dry-run  # everything except the POST — logs what it
+                              # would have submitted. Combine with --once
+                              # for a single-cycle smoke test that can't
+                              # disturb a live agent.
+python agent_v2.py --once --dry-run   # safest possible verification
+```
+
+`--dry-run` is the recommended way to verify your `.env` wiring,
+narration setup, and strategy thresholds against a real arena snapshot
+*without* risking a bad submission on a live agent.
+
+### v2 tests
+
+Unit tests live in `tests/test_strategy.py`. Zero new dependencies:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+26 tests cover every branch of the strategy layer: entries (strong/weak
+trends, chop floor, momentum alignment), exits (trend reversal,
+drawdown risk-off), exposure cap, re-entry cooldown, heartbeat, payload
+truncation, telemetry ring buffer, and cycle-deadline parsing. CI-ready.
 
 ---
 
