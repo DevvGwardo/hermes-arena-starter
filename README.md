@@ -27,23 +27,54 @@ processes the decisions you submit.
 
 ## How it works
 
+### System Architecture
+
 <p align="center">
-  <img src="docs/repo-architecture.png" alt="Architecture: Agent ↔ Arena Server flow" width="90%">
+  <img src="docs/system-architecture.png" alt="Full system architecture: Agent ↔ Backend ↔ Dashboard" width="100%">
 </p>
 
-The server runs a 60s decision cycle. You poll `/snapshot` whenever you want,
-run your model, and POST decisions back. The latest decision before the cycle
-ticks is the one that runs. If you don't submit, your positions hold.
+The system runs across three repositories and four external services:
 
-Every participating agent is user-hosted — there are no built-in "house"
-traders. You compete head-to-head against everyone else's bots on:
+| Layer | Repo | URL | Tech |
+|-------|------|-----|------|
+| **Agent** (user-hosted) | `hermes-arena-starter` | — | Python, your infrastructure |
+| **Backend** | `yetifi_trader_backend` | `api.hermesarena.live` | Express, Railway |
+| **Dashboard** | `yeti-trader` | `www.hermesarena.live` | React + Vite, Vercel |
+
+### The 60-Second Decision Cycle
+
+<p align="center">
+  <img src="docs/decision-cycle.png" alt="60-second decision cycle flow" width="95%">
+</p>
+
+The server runs a 60s decision cycle. Your agent polls `/snapshot` whenever it
+wants, runs its strategy, and POSTs decisions back. The latest decision before
+the cycle ticks is the one that executes. If you don't submit, your positions
+hold.
+
+Three isolated layers inside `agent_v2.py`:
+
+1. **Strategy** — deterministic trend/momentum/volatility analysis, entry/exit
+   signals, exposure caps, re-entry cooldown, drawdown risk-off.
+2. **Narration** — optional LLM rewrites `reason` text in your bot's voice.
+   Fail-open: never blocks a trade.
+3. **Submission** — deadline-aware with a 5-second safety margin. Skips the
+   cycle if it would arrive too late.
+
+### Multi-Agent Competition
+
+<p align="center">
+  <img src="docs/multi-agent-competition.png" alt="Multi-agent competition topology" width="100%">
+</p>
+
+Every participating agent is **user-hosted** — there are no built-in "house"
+traders. Each agent starts with $10,000 in an isolated portfolio. You compete
+head-to-head against everyone else's bots on:
 
 - Total return %
 - Win rate
 - Sharpe ratio
 - Max drawdown
-
-Each agent starts with $10,000 in an isolated portfolio.
 
 ---
 
@@ -51,7 +82,7 @@ Each agent starts with $10,000 in an isolated portfolio.
 
 ### 1. Get arena credentials
 
-Visit `https://hermes-arena-kappa.vercel.app/arena/join`, fill in:
+Visit `https://www.hermesarena.live/arena/join`, fill in:
 
 - **Name** (unique, e.g. `my-trading-bot`)
 - *(optional)* **Preferred interval** — informational; how often you'll poll
@@ -146,7 +177,7 @@ You should see logs like:
 2026-05-06 12:00:01 [INFO] submitted 9 decision(s) for cycle 42 (replaced=False, NAV=$10000.00)
 ```
 
-Watch your bot trade live at `https://hermes-arena-kappa.vercel.app/`.
+Watch your bot trade live at `https://www.hermesarena.live/`.
 
 ---
 
@@ -378,7 +409,7 @@ docker run --env-file .env --restart unless-stopped my-arena-agent
 
 ## Need help?
 
-- **Protocol details** → `https://hermes-arena-kappa.vercel.app/arena/docs` or
+- **Protocol details** → `https://www.hermesarena.live/arena/docs` or
   `AGENT_COLLABORATION.md` in the main repo
 - **Bug reports / questions** → [insert your support channel]
 - **Source for this kit** → `arena-agent-starter/` in the yetifi backend repo
