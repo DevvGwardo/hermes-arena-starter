@@ -61,8 +61,11 @@ Tunable env vars (all optional, sensible defaults):
     AGENT_TELEMETRY_EVERY          10       cycles between health dumps
     AGENT_TRADES_HISTOGRAM_DEPTH   50       rolling window for action mix
 
-    STRATEGY_MAX_TOTAL_EXPOSURE    50       leave 10% headroom under
-                                            the server's 60% ceiling
+    STRATEGY_MAX_TOTAL_EXPOSURE    50       strategy-side cap. Server has
+                                            no exposure ceiling — cash is
+                                            the only constraint — but
+                                            holding some cash buffer makes
+                                            re-entry/sizing flexible.
     STRATEGY_MIN_VOLATILITY        0.4      % below this = chop, skip
     STRATEGY_REENTRY_COOLDOWN      5        cycles before re-entering
                                             same symbol after exit
@@ -323,8 +326,9 @@ def _conviction_for(trend: str, volatility: float) -> int:
 
 
 def _size_for_conviction(conviction: int) -> float:
-    """Position size in percent, by conviction tier. All under the
-    server's 20%/trade hard cap."""
+    """Position size in percent, by conviction tier. The server has no
+    per-trade cap — cash availability is the only constraint — these
+    sizes are this strategy's deliberate budget, not a server limit."""
     return {4: 15.0, 3: 12.0, 2: 8.0, 1: 6.0}.get(conviction, 0.0)
 
 

@@ -4,10 +4,13 @@ Hermes Arena — agent.py — primary "Hermes-Decides" starter.
 Architecture in one sentence: every cycle, your local Hermes Agent gateway
 gets the full market snapshot and decides LONG / SHORT / FLAT, position
 sizing, and the `reason` text — its reply IS the trade. The arena server
-enforces every safety cap on its side (20% per-trade, 60% total exposure,
-3 decisions/cycle, -15% / -20% drawdown circuit breakers, 120 req/min),
-so you get maximum freedom to configure the upstream model however you
-want without risking runaway behavior.
+enforces real-exchange-shaped safety on its side: cash availability
+(no overdraft), 3 decisions/cycle, -15% / -20% drawdown circuit breakers,
+120 req/min, and per-trade size in [0, 100]. Sizing is otherwise free —
+your model picks; cash gates execution. Decisions whose required size
+would exceed available cash are rejected outright (no auto-scaling) and
+surface back on the next /snapshot under lastCycleRejections so the bot
+can self-correct.
 
 Loop:
     1. GET  /api/arena/agent/<id>/snapshot                      (this file)
@@ -143,8 +146,11 @@ class ArenaClient:
 # Rules:
 #   - action ∈ {"LONG", "SHORT", "FLAT"}
 #   - FLAT closes any open position for that symbol; positionSizePercent must be 0
-#   - positionSizePercent: 0–20 per trade (rejected above 20, not silently capped).
-#     Trade processor additionally enforces a 60% total-exposure ceiling.
+#   - positionSizePercent: 0–100 per trade. Cash is the real constraint —
+#     a size that exceeds available cash is rejected outright (no auto-
+#     scaling). The rejection appears on the next /snapshot under
+#     lastCycleRejections with a reason ("insufficient_cash") and a
+#     human-readable message your bot can log.
 #   - Max 3 decisions per cycle; duplicate symbols within a submission are rejected
 #   - reason: 1–280 chars; control / bidi-override codepoints stripped server-side
 #   - Symbols you don't include keep their existing position
@@ -156,6 +162,16 @@ def decide(snap: dict[str, Any]) -> list[dict[str, Any]]:
     Default: ask the local Hermes model for decisions. The model uses your
     BOT_PERSONA and writes `reason` strings IN YOUR VOICE — that's what
     viewers see in the dashboard's Live Agent Chat Stream.
+
+    Sizing is yours. The server has no per-trade or total-exposure cap;
+    the only constraint is `snap["portfolio"]["cash"]` (literal USD
+    available to spend). A submission whose required notional exceeds
+    your free cash this cycle is rejected outright — no auto-scaling —
+    and the rejection appears on the NEXT /snapshot under
+    `lastCycleRejections` with a `reason` and human-readable `message`.
+    Read that field at the top of every cycle: it's a tight feedback
+    loop you can use to self-correct. Real-wallet semantics: spend it
+    all on BTC and you can't open another position until that one closes.
 
     Cadence guarantee: returns AT LEAST one decision every cycle so the
     chat stream stays alive even when the structured decision call yields
@@ -247,7 +263,7 @@ OUTPUT CONTRACT (strict JSON, no prose, no markdown):
     {{
       "symbol": "BTC|ETH|SOL|BNB|XRP|ADA|DOGE|AVAX|DOT",
       "action": "LONG|SHORT|FLAT",
-      "positionSizePercent": <number 0-20>,
+      "positionSizePercent": <number 0-100>,
       "reason": "<1-2 sentence explanation IN YOUR VOICE, under 280 chars>"
     }}
   ]
@@ -256,7 +272,7 @@ OUTPUT CONTRACT (strict JSON, no prose, no markdown):
 Rules:
 - Max 3 decisions per cycle. Symbols you omit hold their existing positions.
 - FLAT closes any open position for that symbol; positionSizePercent must be 0.
-- Server caps positionSizePercent at 20% per trade and 60% total exposure.
+- positionSizePercent is 0–100. Cash is the actual constraint; submissions above your free cash this cycle are rejected and surfaced in the next /snapshot.
 - The `reason` field is rendered VERBATIM in the public live chat stream.
   Write it in your trader voice — viewers read your personality there. Do
   NOT output mechanical scores or copy from this prompt. Be human, terse,
