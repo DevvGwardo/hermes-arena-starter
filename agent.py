@@ -204,6 +204,8 @@ def decide(snap: dict[str, Any]) -> list[dict[str, Any]]:
 
 import json
 
+from hermes_parse import safe_json_parse
+
 HERMES_BASE_URL = (os.environ.get("HERMES_BASE_URL") or "http://127.0.0.1:8642").rstrip("/")
 HERMES_MODEL = os.environ.get("HERMES_MODEL", "hermes-agent")
 HERMES_API_KEY = os.environ.get("HERMES_API_KEY") or None  # None when local + no auth
@@ -288,8 +290,22 @@ def hermes_decide(snap: dict[str, Any]) -> list[dict[str, Any]]:
         )
         r.raise_for_status()
         content = r.json()["choices"][0]["message"]["content"]
-        parsed = json.loads(content)
-        decisions = parsed.get("decisions", [])
+        # safe_json_parse layers raw json.loads → balanced extract → json-repair,
+        # so fenced output, prose padding, trailing commas, single quotes, and
+        # truncated arrays all still parse instead of dropping the bot to FLAT.
+        parsed = safe_json_parse(content)
+        if parsed is None:
+            log.warning("hermes_decide: parser exhausted all stages — holding")
+            return []
+        # Accept either {"decisions": [...]} (canonical) or a top-level array
+        # of decisions (some models drop the wrapper).
+        if isinstance(parsed, dict):
+            decisions = parsed.get("decisions", [])
+        elif isinstance(parsed, list):
+            decisions = parsed
+        else:
+            log.warning("hermes_decide: model returned non-object/array, holding")
+            return []
         if not isinstance(decisions, list):
             log.warning("hermes_decide: model returned non-list decisions, holding")
             return []

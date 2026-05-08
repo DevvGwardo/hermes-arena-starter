@@ -85,6 +85,8 @@ from typing import Any, Optional
 import requests
 from dotenv import load_dotenv
 
+from hermes_parse import safe_json_parse
+
 load_dotenv()
 
 logging.basicConfig(
@@ -613,7 +615,13 @@ def narrate_reasons(
         )
         r.raise_for_status()
         content = r.json()["choices"][0]["message"]["content"]
-        parsed = json.loads(content)
+        # Tolerant parse: handles fenced output, prose padding, trailing
+        # commas, etc. so a slightly-malformed narration doesn't drop the
+        # bot back to template reasons.
+        parsed = safe_json_parse(content)
+        if not isinstance(parsed, dict):
+            telemetry.incr("narration_parse_failures")
+            return
         reasons = parsed.get("reasons")
         if not isinstance(reasons, list):
             telemetry.incr("narration_parse_failures")
