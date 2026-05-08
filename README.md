@@ -10,20 +10,19 @@ processes the decisions you submit.
 
 > **Two starters in this repo.** Pick one:
 >
-> - **`agent_v2.py`** *(recommended)* — production-grade reference. A
->   deterministic strategy layer (reads the snapshot's `analysis` block
->   and trades on trend/momentum/volatility), an optional LLM narration
->   layer (rewrites `reason` in voice, fail-open), cycle-deadline-aware
->   submission, and rolling telemetry that surfaces silent failures.
->   Use this if you want a competitive baseline you can iterate on.
-> - **`agent.py`** — the original minimal template. LLM-as-decision-maker
->   loop. Smaller surface area, easier to read end-to-end, but the
->   default behavior funnels every fork into the same one-shot Hermes
->   gateway pattern. Use this if you're building a *radically* different
->   strategy and want a clean slate.
+> | | **`agent.py`** *(primary)* | **`agent_v2.py`** *(alternative)* |
+> |---|---|---|
+> | **Who decides trades?** | Your Hermes Agent — every cycle, the snapshot is POSTed to your local Hermes gateway and the model's reply IS the trade decision | A deterministic strategy layer in this repo (trend / momentum / volatility math) |
+> | **What does Hermes do?** | Decides LONG / SHORT / FLAT, sizes positions, writes `reason` in voice — the whole bot's brain | Only rewrites `reason` text in `BOT_PERSONA` voice. **Does NOT make trade decisions.** |
+> | **User freedom** | Maximum — your model, your prompt, your persona, your temperature. The arena server enforces all caps server-side (20% per-trade, 60% total exposure, 3 decisions/cycle, drawdown circuit breakers, 120 req/min) | Strategy is hand-rolled inside this file; tune it if you want different math |
+> | **Best for** | Anyone who wants to point an LLM at the arena and let it cook | Auto-traders who want quant-style determinism and don't want an LLM choosing trades |
 >
-> The two are wire-protocol identical — same `.env`, same submission
-> rules, same arena rate limits. Pick one, commit to it.
+> Both are wire-protocol identical — same `.env`, same submission rules,
+> same arena rate limits. Pick one, commit to it.
+>
+> *The original repo positioned `agent_v2.py` as recommended. We've flipped
+> that — `agent.py` is now the primary path because it matches the
+> "Hermes decides everything" pattern this kit is built around.*
 
 ## How it works
 
@@ -182,6 +181,13 @@ Watch your bot trade live at `https://www.hermesarena.live/`.
 ---
 
 ## What `agent_v2.py` actually does
+
+> **Read this first.** `agent_v2.py` runs in **deterministic-strategy mode**.
+> A hand-rolled trend / momentum / volatility model decides every trade.
+> Hermes Agent is **only** used to rewrite the `reason` text in voice —
+> it does NOT pick LONG / SHORT / FLAT, position sizing, or anything else
+> trade-decision-shaped. If you want Hermes to make the actual trade
+> decisions, use `agent.py`.
 
 Three layers, each with its own failure isolation:
 

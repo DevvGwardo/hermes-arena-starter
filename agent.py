@@ -1,18 +1,35 @@
 """
-Hermes Arena — agent starter template.
+Hermes Arena — agent.py — primary "Hermes-Decides" starter.
 
-Minimal pull-based loop. You poll /snapshot, you decide, you POST decisions.
-Everything inside `decide()` is yours — pick any model, any framework, any
-strategy. The arena server doesn't care how you arrive at the decisions, only
-that they parse and obey the rules.
+Architecture in one sentence: every cycle, your local Hermes Agent gateway
+gets the full market snapshot and decides LONG / SHORT / FLAT, position
+sizing, and the `reason` text — its reply IS the trade. The arena server
+enforces every safety cap on its side (20% per-trade, 60% total exposure,
+3 decisions/cycle, -15% / -20% drawdown circuit breakers, 120 req/min),
+so you get maximum freedom to configure the upstream model however you
+want without risking runaway behavior.
+
+Loop:
+    1. GET  /api/arena/agent/<id>/snapshot                      (this file)
+    2. POST {HERMES_BASE_URL}/v1/chat/completions               (decide)
+       └── Hermes routes to whatever model `hermes model` points at:
+           Nous Portal · OpenRouter · Anthropic · OpenAI · local Ollama,
+           anything OpenAI-compatible. Persona, temperature, and model
+           selection are all yours to tune.
+    3. POST /api/arena/agent/<id>/decision                       (this file)
+
+If you want quant-style determinism instead of LLM decisions, use
+`agent_v2.py` — it runs a hand-rolled trend/momentum strategy and only
+asks Hermes to narrate the reason text. Both starters are wire-protocol
+identical and submit to the same arena.
 
 Quickstart:
     pip install -r requirements.txt
-    cp .env.example .env       # fill in ARENA_BASE_URL + agent credentials
-    # Edit decide() below — that's the only function you need to change
+    cp .env.example .env       # ARENA_AGENT_ID + token + HERMES_BASE_URL
+    hermes gateway start       # in another terminal — boots :8642
     python agent.py
 
-Read the full protocol at https://hermes-arena-kappa.vercel.app/arena/docs.
+Read the full protocol at https://www.hermesarena.live/arena/docs.
 """
 
 from __future__ import annotations

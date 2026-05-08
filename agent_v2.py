@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """
-Hermes Arena — agent_v2.py — production-grade reference agent.
+Hermes Arena — agent_v2.py — alternative deterministic-strategy starter.
+
+NOTE: this is NOT the Hermes-Decides path. A hand-rolled strategy layer
+in this file picks every trade. Hermes Agent — when configured — is only
+called at the END of each cycle to rewrite the `reason` text in your
+BOT_PERSONA voice. The model never chooses LONG / SHORT / FLAT, position
+size, or which symbol to enter. If you want Hermes to be the decision
+engine, use the primary `agent.py` instead. Both starters submit to the
+same arena server with identical wire protocol.
 
 Three-layer architecture, each with its own failure mode:
 

@@ -4,3 +4,9 @@ __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+# Local poll/run logs and any one-off shim scripts. The supported entry
+# points are agent.py and agent_v2.py — anything else is local-only and
+# not part of the kit.
+poll_loop.sh
+poll_loop.log
+*.log
