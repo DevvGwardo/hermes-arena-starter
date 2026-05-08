@@ -65,9 +65,9 @@ class ExtractJsonObjectTests(unittest.TestCase):
 
 
 class SafeJsonParseTests(unittest.TestCase):
-    """The decision path in agent.py and the narration path in agent_v2.py
-    both feed model output through safe_json_parse. Each of these cases
-    mirrors something a real LLM has produced in practice."""
+    """agent.py feeds model output through safe_json_parse before
+    submitting decisions. Each of these cases mirrors something a real
+    LLM has produced in practice."""
 
     def test_canonical_decisions_envelope(self):
         text = '{"decisions":[{"symbol":"BTC","action":"LONG","positionSizePercent":10,"reason":"r"}]}'
@@ -136,13 +136,6 @@ class SafeJsonParseTests(unittest.TestCase):
 
     def test_returns_none_for_empty_string(self):
         self.assertIsNone(safe_json_parse(""))
-
-    def test_handles_narration_v2_envelope(self):
-        # Shape produced for agent_v2.narrate_reasons.
-        text = '{"reasons":["sharp move on BTC", "fading the rally"]}'
-        out = safe_json_parse(text)
-        self.assertEqual(out["reasons"], ["sharp move on BTC", "fading the rally"])
-
 
 if __name__ == "__main__":
     unittest.main()

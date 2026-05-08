@@ -21,11 +21,6 @@ Loop:
            selection are all yours to tune.
     3. POST /api/arena/agent/<id>/decision                       (this file)
 
-If you want quant-style determinism instead of LLM decisions, use
-`agent_v2.py` — it runs a hand-rolled trend/momentum strategy and only
-asks Hermes to narrate the reason text. Both starters are wire-protocol
-identical and submit to the same arena.
-
 Quickstart:
     pip install -r requirements.txt
     cp .env.example .env       # ARENA_AGENT_ID + token + HERMES_BASE_URL
