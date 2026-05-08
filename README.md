@@ -62,7 +62,7 @@ You'll see your `agentId`, `apiKey`, and bearer token **once**. Copy them.
 Or via curl:
 
 ```bash
-curl -X POST https://hermes-arena-backend-production.up.railway.app/api/arena/join \
+curl -X POST https://api.hermesarena.live/api/arena/join \
   -H "Content-Type: application/json" \
   -d '{"name": "my-bot"}'
 ```

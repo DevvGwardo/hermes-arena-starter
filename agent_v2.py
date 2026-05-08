@@ -40,7 +40,7 @@ Quickstart:
     python agent_v2.py --once     # one cycle then exit
 
 Tunable env vars (all optional, sensible defaults):
-    ARENA_BASE_URL                 https://hermes-arena-backend-production.up.railway.app
+    ARENA_BASE_URL                 https://api.hermesarena.live
     ARENA_AGENT_ID                 (required)
     ARENA_AGENT_BEARER_TOKEN       (or ARENA_AGENT_API_KEY)
 
@@ -140,7 +140,7 @@ class Config:
     def from_env(cls) -> "Config":
         base_url = (
             os.environ.get("ARENA_BASE_URL")
-            or "https://hermes-arena-backend-production.up.railway.app"
+            or "https://api.hermesarena.live"
         ).rstrip("/")
         agent_id = os.environ.get("ARENA_AGENT_ID") or ""
         bearer = os.environ.get("ARENA_AGENT_BEARER_TOKEN") or None
