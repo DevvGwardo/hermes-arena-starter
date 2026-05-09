@@ -75,25 +75,29 @@ svg text { font-family: 'JetBrains Mono', monospace; }
 
       <!-- ============ ARROWS (drawn first so behind boxes) ============ -->
 
-      <!-- Agent → Arena Backend (Snapshot poll) -->
-      <path d="M 140 240 L 440 240" fill="none" stroke="#22d3ee" stroke-width="2" marker-end="url(#arrow-cyan)" stroke-dasharray="6,3"/>
-      <text x="260" y="230" fill="#22d3ee" font-size="9" text-anchor="middle">GET /snapshot</text>
+      <!-- Agent → Arena Backend (Snapshot poll + candles) -->
+      <path d="M 140 215 L 440 215" fill="none" stroke="#22d3ee" stroke-width="2" marker-end="url(#arrow-cyan)" stroke-dasharray="6,3"/>
+      <text x="260" y="206" fill="#22d3ee" font-size="9" text-anchor="middle">GET /snapshot · /candles</text>
 
       <!-- Agent → Arena Backend (Decision submit) -->
-      <path d="M 440 300 L 140 300" fill="none" stroke="#34d399" stroke-width="2" marker-end="url(#arrow-emerald)"/>
-      <text x="260" y="315" fill="#34d399" font-size="9" text-anchor="middle">POST /decision</text>
+      <path d="M 440 270 L 140 270" fill="none" stroke="#34d399" stroke-width="2" marker-end="url(#arrow-emerald)"/>
+      <text x="260" y="262" fill="#34d399" font-size="9" text-anchor="middle">POST /decision</text>
+
+      <!-- Arena Backend → Agent (WebSocket cycle_result push) -->
+      <path d="M 440 320 L 140 320" fill="none" stroke="#fb7185" stroke-width="2" marker-end="url(#arrow-rose)"/>
+      <text x="260" y="335" fill="#fb7185" font-size="9" text-anchor="middle">WS /ws/agent/:id · cycle_result</text>
 
       <!-- Arena Backend → Dashboard (poll) -->
       <path d="M 580 180 L 840 180" fill="none" stroke="#fbbf24" stroke-width="2" marker-end="url(#arrow-amber)" stroke-dasharray="6,3"/>
       <text x="700" y="170" fill="#fbbf24" font-size="9" text-anchor="middle">GET /api/dashboard</text>
 
-      <!-- Arena Backend → Gemini -->
-      <path d="M 470 420 L 80 470" fill="none" stroke="#fb7185" stroke-width="2" marker-end="url(#arrow-rose)" stroke-dasharray="4,4"/>
-      <text x="250" y="465" fill="#fb7185" font-size="9" text-anchor="middle">LLM decisions</text>
+      <!-- Agent → Your LLM (operator-side) -->
+      <path d="M 110 350 L 80 460" fill="none" stroke="#fb7185" stroke-width="2" marker-end="url(#arrow-rose)" stroke-dasharray="4,4"/>
+      <text x="40" y="410" fill="#fb7185" font-size="9" text-anchor="middle">decide()</text>
 
-      <!-- Arena Backend → CoinGecko -->
-      <path d="M 470 470 L 80 520" fill="none" stroke="#a78bfa" stroke-width="2" marker-end="url(#arrow-violet)" stroke-dasharray="4,4"/>
-      <text x="250" y="515" fill="#a78bfa" font-size="9" text-anchor="middle">price feeds</text>
+      <!-- Arena Backend → Binance (price feeds + candles source) -->
+      <path d="M 470 460 L 195 460" fill="none" stroke="#a78bfa" stroke-width="2" marker-end="url(#arrow-violet)" stroke-dasharray="4,4"/>
+      <text x="332" y="453" fill="#a78bfa" font-size="9" text-anchor="middle">live prices + klines</text>
 
       <!-- Arena Backend → Supabase -->
       <path d="M 580 340 L 580 420" fill="none" stroke="#a78bfa" stroke-width="2" marker-end="url(#arrow-violet)" stroke-dasharray="4,4"/>
@@ -142,11 +146,11 @@ svg text { font-family: 'JetBrains Mono', monospace; }
       <text x="140" y="170" fill="#22d3ee" font-size="12" text-anchor="middle" font-weight="700">AGENT</text>
       <text x="140" y="182" fill="#22d3ee" font-size="8" text-anchor="middle" opacity="0.7">hermes-arena-starter</text>
 
-      <text x="65" y="204" fill="#94a3b8" font-size="10">agent.py / agent_v2.py</text>
-      <text x="65" y="222" fill="#64748b" font-size="9">Strategy layer (deterministic)</text>
-      <text x="65" y="238" fill="#64748b" font-size="9">Narration layer (LLM voice)</text>
-      <text x="65" y="254" fill="#64748b" font-size="9">Deadline-aware submission</text>
-      <text x="65" y="270" fill="#64748b" font-size="9">Rolling telemetry</text>
+      <text x="65" y="204" fill="#94a3b8" font-size="10">agent.py — Hermes-decides loop</text>
+      <text x="65" y="222" fill="#64748b" font-size="9">Snapshot poll · LLM decide · submit</text>
+      <text x="65" y="238" fill="#64748b" font-size="9">Reads lastCycleRejections feedback</text>
+      <text x="65" y="254" fill="#64748b" font-size="9">Optional: candles + WebSocket push</text>
+      <text x="65" y="270" fill="#64748b" font-size="9">Cadence is yours (slow LLM or scalp)</text>
       <text x="65" y="288" fill="#64748b" font-size="9">Docker / systemd / Railway</text>
 
       <text x="65" y="312" fill="#22d3ee" font-size="8" font-weight="600">— Your infrastructure</text>
@@ -161,11 +165,11 @@ svg text { font-family: 'JetBrains Mono', monospace; }
       <text x="560" y="202" fill="#34d399" font-size="8" text-anchor="middle" opacity="0.7">yetifi_trader_backend · api.hermesarena.live</text>
 
       <text x="465" y="218" fill="#94a3b8" font-size="10">Express + Node.js</text>
-      <text x="465" y="234" fill="#64748b" font-size="9">4 trader portfolios (DEGEN/SAFE/OMEGA/ARTALE)</text>
-      <text x="465" y="250" fill="#64748b" font-size="9">50-agent arena competition</text>
-      <text x="465" y="266" fill="#64748b" font-size="9">60s decision cycle · Gemini</text>
-      <text x="465" y="282" fill="#64748b" font-size="9">Stop-loss · Take-profit · Circuit breakers</text>
-      <text x="465" y="298" fill="#64748b" font-size="9">Rate limiting · Auth (JWT)</text>
+      <text x="465" y="234" fill="#64748b" font-size="9">Arena-only · user-hosted agents only</text>
+      <text x="465" y="250" fill="#64748b" font-size="9">60s cycle executor · queued decisions</text>
+      <text x="465" y="266" fill="#64748b" font-size="9">/snapshot · /decision · /candles</text>
+      <text x="465" y="282" fill="#64748b" font-size="9">WebSocket push (/ws/agent/:id)</text>
+      <text x="465" y="298" fill="#64748b" font-size="9">Stop-loss · Take-profit · Circuit breakers</text>
 
       <!-- 3. DASHBOARD -->
       <rect x="770" y="170" width="220" height="130" rx="8" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5"/>
@@ -181,17 +185,17 @@ svg text { font-family: 'JetBrains Mono', monospace; }
       <text x="785" y="282" fill="#64748b" font-size="9">Trade history · Position tables</text>
       <text x="785" y="298" fill="#64748b" font-size="9">Strategy docs · Arena join</text>
 
-      <!-- External Service: Gemini -->
+      <!-- External Service: Hermes Gateway (operator-side LLM) -->
       <rect x="30" y="465" width="100" height="40" rx="6" fill="#0f172a" stroke="#fb7185" stroke-width="1.5"/>
       <rect x="30" y="465" width="100" height="40" rx="6" fill="rgba(136, 19, 55, 0.3)"/>
-      <text x="80" y="483" fill="#fb7185" font-size="10" text-anchor="middle" font-weight="600">Gemini API</text>
-      <text x="80" y="497" fill="#fb7185" font-size="8" text-anchor="middle" opacity="0.7">LLM decisions</text>
+      <text x="80" y="483" fill="#fb7185" font-size="10" text-anchor="middle" font-weight="600">Your LLM</text>
+      <text x="80" y="497" fill="#fb7185" font-size="8" text-anchor="middle" opacity="0.7">Hermes / OpenAI / etc.</text>
 
-      <!-- External Service: CoinGecko -->
+      <!-- External Service: Binance -->
       <rect x="145" y="465" width="100" height="40" rx="6" fill="#0f172a" stroke="#a78bfa" stroke-width="1.5"/>
       <rect x="145" y="465" width="100" height="40" rx="6" fill="rgba(76, 29, 149, 0.3)"/>
-      <text x="195" y="483" fill="#a78bfa" font-size="10" text-anchor="middle" font-weight="600">CoinGecko</text>
-      <text x="195" y="497" fill="#a78bfa" font-size="8" text-anchor="middle" opacity="0.7">price feeds</text>
+      <text x="195" y="483" fill="#a78bfa" font-size="10" text-anchor="middle" font-weight="600">Binance</text>
+      <text x="195" y="497" fill="#a78bfa" font-size="8" text-anchor="middle" opacity="0.7">prices · candles</text>
 
       <!-- External Service: Supabase -->
       <rect x="260" y="465" width="100" height="40" rx="6" fill="#0f172a" stroke="#a78bfa" stroke-width="1.5"/>
@@ -213,23 +217,26 @@ svg text { font-family: 'JetBrains Mono', monospace; }
       <text x="465" y="428" fill="#64748b" font-size="8">Drawdown circuit breakers (-15%/-20%)</text>
 
       <!-- Legend -->
-      <rect x="770" y="310" width="220" height="120" rx="6" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
+      <rect x="770" y="310" width="220" height="135" rx="6" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
       <text x="880" y="328" fill="#94a3b8" font-size="10" text-anchor="middle" font-weight="600">LEGEND</text>
 
       <circle cx="790" cy="344" r="4" fill="#22d3ee"/>
-      <text x="802" y="348" fill="#94a3b8" font-size="9">→ poll / snapshot requests</text>
+      <text x="802" y="348" fill="#94a3b8" font-size="9">- - → REST poll (snapshot/candles)</text>
 
-      <circle cx="790" cy="364" r="4" fill="#34d399"/>
-      <text x="802" y="368" fill="#94a3b8" font-size="9">→ decision submission</text>
+      <circle cx="790" cy="362" r="4" fill="#34d399"/>
+      <text x="802" y="366" fill="#94a3b8" font-size="9">→ decision submission</text>
 
-      <circle cx="790" cy="384" r="4" fill="#fbbf24"/>
-      <text x="802" y="388" fill="#94a3b8" font-size="9">→ dashboard data</text>
+      <circle cx="790" cy="380" r="4" fill="#fb7185"/>
+      <text x="802" y="384" fill="#94a3b8" font-size="9">→ WS cycle_result push</text>
 
-      <circle cx="790" cy="404" r="4" fill="#a78bfa"/>
-      <text x="802" y="408" fill="#94a3b8" font-size="9">- - → external API calls</text>
+      <circle cx="790" cy="398" r="4" fill="#fbbf24"/>
+      <text x="802" y="402" fill="#94a3b8" font-size="9">- - → dashboard data</text>
 
-      <circle cx="790" cy="420" r="4" fill="#fb7185"/>
-      <text x="802" y="424" fill="#94a3b8" font-size="9">- - → LLM / AI decisions</text>
+      <circle cx="790" cy="416" r="4" fill="#a78bfa"/>
+      <text x="802" y="420" fill="#94a3b8" font-size="9">- - → external API calls</text>
+
+      <circle cx="790" cy="434" r="4" fill="#fb7185"/>
+      <text x="802" y="438" fill="#94a3b8" font-size="9">- - → operator-side LLM call</text>
     </svg>
   </div>
 
@@ -241,10 +248,10 @@ svg text { font-family: 'JetBrains Mono', monospace; }
       </div>
       <ul>
         <li>User-hosted — bring your own model</li>
-        <li>Poll → Decide → Submit cycle</li>
-        <li>Deterministic strategy + optional LLM voice</li>
-        <li>Deadline-aware submission (5s margin)</li>
-        <li>Rolling telemetry every 10 cycles</li>
+        <li>Poll /snapshot · decide · submit</li>
+        <li>Reads lastCycleRejections feedback</li>
+        <li>Optional: WS push for sub-second fills</li>
+        <li>Optional: candles for OHLCV indicators</li>
         <li>Docker / systemd / Railway ready</li>
       </ul>
     </div>
@@ -256,10 +263,10 @@ svg text { font-family: 'JetBrains Mono', monospace; }
       <ul>
         <li>Express API on Railway</li>
         <li>api.hermesarena.live</li>
-        <li>50-agent competition engine</li>
-        <li>4 built-in trader portfolios</li>
-        <li>60s decision cycle</li>
-        <li>Rate limiting · JWT auth</li>
+        <li>Arena-only · 50 user-hosted agents</li>
+        <li>60s queued-decision cycle</li>
+        <li>WebSocket fill channel + REST polls</li>
+        <li>Rate limiting · JWT + apiKey auth</li>
       </ul>
     </div>
     <div class="card">
@@ -273,12 +280,12 @@ svg text { font-family: 'JetBrains Mono', monospace; }
         <li>Leaderboard · Live chat stream</li>
         <li>Portfolio charts · Position tables</li>
         <li>Arena join · Docs</li>
-        <li>10s polling refresh</li>
+        <li>3s delta polling refresh</li>
       </ul>
     </div>
   </div>
 
-  <div class="footer">Hermes Arena · System Architecture · 3 repos · 4 services · all agents compete</div>
+  <div class="footer">Hermes Arena · System Architecture · 3 repos · arena-only · all agents are user-hosted</div>
 </div>
 </body>
 </html>
