@@ -116,6 +116,36 @@ class ArenaClient:
         r.raise_for_status()
         return r.json()
 
+    def candles(
+        self,
+        symbol: str,
+        interval: str = "5m",
+        limit: int = 200,
+        from_ms: Optional[int] = None,
+        to_ms: Optional[int] = None,
+    ) -> list[dict[str, Any]]:
+        """Pull OHLCV bars (Binance-sourced, exchange-aligned closed bars).
+
+        Intervals: 1m, 5m, 15m, 1h, 4h, 1d. Each candle has shape
+        {t, o, h, l, c, v, n, ct} where t/ct are unix-ms. Use this when
+        the snapshot's per-coin `analysis` (RSI / vol / momentum the
+        server already computes) isn't enough — e.g. for custom MACD,
+        Bollinger bands, or multi-timeframe confirmation.
+        """
+        params: dict[str, Any] = {"symbol": symbol, "interval": interval, "limit": limit}
+        if from_ms is not None:
+            params["from"] = from_ms
+        if to_ms is not None:
+            params["to"] = to_ms
+        r = self.session.get(
+            f"{self.cfg.base_url}/api/prices/candles",
+            params=params,
+            timeout=10,
+        )
+        r.raise_for_status()
+        body = r.json()
+        return body.get("candles", [])
+
 
 # ─── Your bot's brain ──────────────────────────────────────────────────────
 #
@@ -268,6 +298,13 @@ Rules:
 - Max 3 decisions per cycle. Symbols you omit hold their existing positions.
 - FLAT closes any open position for that symbol; positionSizePercent must be 0.
 - positionSizePercent is 0–100. Cash is the actual constraint; submissions above your free cash this cycle are rejected and surfaced in the next /snapshot.
+- If `lastCycleRejections` is non-empty, the executor refused those exact
+  submissions on the prior cycle. ADAPT — don't resubmit the same size:
+    • reason="insufficient_cash" → resize against the `cash` you see now,
+      not the requested percent. Or close an existing position to free cash.
+    • reason="max_positions_reached" → close (FLAT) before opening anything
+      new. The server caps you at the listed open-trade count.
+    • reason="invalid_price" → transient feed gap; skip the symbol this cycle.
 - The `reason` field is rendered VERBATIM in the public live chat stream.
   Write it in your trader voice — viewers read your personality there. Do
   NOT output mechanical scores or copy from this prompt. Be human, terse,
@@ -285,6 +322,12 @@ def hermes_decide(snap: dict[str, Any]) -> list[dict[str, Any]]:
         "cash": snap["portfolio"]["cash"],
         "drawdownPercent": snap["portfolio"]["currentDrawdownPercent"],
         "openTrades": snap["portfolio"]["openTrades"],
+        # Server's record of decisions it refused to fund last cycle.
+        # Empty array means everything submitted got executed. Promoted
+        # into the model context so the bot reacts to its own past
+        # mistakes (e.g. submits smaller after insufficient_cash, closes
+        # before opening after max_positions_reached).
+        "lastCycleRejections": (snap.get("portfolio") or {}).get("lastCycleRejections") or [],
         "coins": {
             sym: {
                 "price": data.get("price"),
@@ -451,6 +494,32 @@ def _synthesize_heartbeat(snap: dict[str, Any]) -> Optional[dict[str, Any]]:
     }
 
 
+# ─── Rejection feedback ────────────────────────────────────────────────────
+#
+# Every /snapshot poll carries the server's record of decisions the cycle
+# executor refused to fund last cycle (`lastCycleRejections`). A bot that
+# ignores this loops on the same broken submission for hours — sizing too
+# big, hammering a maxed-out position slot, etc. The list is replaced
+# wholesale every cycle so it's always "what was rejected most recently".
+#
+# This logger surfaces them as WARNING lines so they're visible in normal
+# operator log output. The model also receives them inside `user_payload`
+# (see `hermes_decide`) so it can self-correct on the very next cycle.
+
+def log_rejections(snap: dict[str, Any]) -> None:
+    rejections = (snap.get("portfolio") or {}).get("lastCycleRejections") or []
+    for r in rejections:
+        log.warning(
+            "rejected last cycle: %s %s requested=%.1f%% available=%.1f%% reason=%s — %s",
+            r.get("symbol"),
+            r.get("action"),
+            float(r.get("requestedPercent", 0)),
+            float(r.get("availablePercent", 0)),
+            r.get("reason"),
+            r.get("message", ""),
+        )
+
+
 # ─── Main loop ─────────────────────────────────────────────────────────────
 
 _running = True
@@ -482,6 +551,11 @@ def main() -> None:
             log.warning("snapshot failed: %s", exc)
             time.sleep(min(cfg.interval_sec, 5))
             continue
+
+        # Surface any executor rejections from the prior cycle so the
+        # operator sees them in normal log output. The model also gets
+        # them via user_payload and is prompted to adapt — see decide().
+        log_rejections(snap)
 
         next_cycle = snap["server"]["acceptingDecisionsForCycle"]
         if next_cycle > last_cycle:
