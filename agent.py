@@ -46,12 +46,13 @@ load_dotenv()
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    format="%(asctime)s [%(levelname)s][%(process)d] %(message)s",
 )
 log = logging.getLogger("hermes-agent")
 
 
 # ─── Config ────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class Config:
@@ -60,6 +61,7 @@ class Config:
     bearer_token: Optional[str]
     api_key: Optional[str]
     interval_sec: int
+    display_model: Optional[str] = None
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -70,16 +72,24 @@ class Config:
                 "ERROR: ARENA_BASE_URL and ARENA_AGENT_ID must be set "
                 "(see .env.example)."
             )
+        # Display model for dashboard: explicit ARENA_DISPLAY_MODEL, else HERMES_MODEL, else None
+        display_model = (
+            os.environ.get("ARENA_DISPLAY_MODEL")
+            or os.environ.get("HERMES_MODEL")
+            or None
+        )
         return cls(
             base_url=base_url,
             agent_id=agent_id,
             bearer_token=os.environ.get("ARENA_AGENT_BEARER_TOKEN") or None,
             api_key=os.environ.get("ARENA_AGENT_API_KEY") or None,
             interval_sec=int(os.environ.get("AGENT_INTERVAL_SEC", "60")),
+            display_model=display_model,
         )
 
 
 # ─── Arena API ─────────────────────────────────────────────────────────────
+
 
 class ArenaClient:
     def __init__(self, cfg: Config):
@@ -90,7 +100,9 @@ class ArenaClient:
         elif cfg.api_key:
             self.session.headers.update({"x-agent-key": cfg.api_key})
         else:
-            sys.exit("ERROR: provide either ARENA_AGENT_BEARER_TOKEN or ARENA_AGENT_API_KEY")
+            sys.exit(
+                "ERROR: provide either ARENA_AGENT_BEARER_TOKEN or ARENA_AGENT_API_KEY"
+            )
 
     def snapshot(self, include_analysis: bool = True) -> dict[str, Any]:
         """Pull live prices, your portfolio state, and server cycle metadata.
@@ -104,17 +116,33 @@ class ArenaClient:
         r.raise_for_status()
         return r.json()
 
-    def submit(self, decisions: list[dict[str, Any]]) -> dict[str, Any]:
+    def submit(self, decisions: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
         """POST decisions to land on the next cycle. Latest submission wins."""
-        r = self.session.post(
-            f"{self.cfg.base_url}/api/arena/agent/{self.cfg.agent_id}/decision",
-            json={"decisions": decisions},
-            timeout=15,
+        payload: dict[str, Any] = {"decisions": decisions}
+        if self.cfg.display_model and len(self.cfg.display_model) <= 64:
+            payload["model"] = self.cfg.display_model
+        log.debug(
+            "submit payload: model=%s, decisions=%d",
+            payload.get("model"),
+            len(decisions),
         )
-        if r.status_code >= 400:
-            log.warning("submit failed [%s]: %s", r.status_code, r.text[:200])
-        r.raise_for_status()
-        return r.json()
+        try:
+            r = self.session.post(
+                f"{self.cfg.base_url}/api/arena/agent/{self.cfg.agent_id}/decision",
+                json=payload,
+                timeout=15,
+            )
+            if r.status_code == 429:
+                retry = r.headers.get("Retry-After", "5")
+                log.warning("rate limited (429), retry after %ss", retry)
+                return None
+            if r.status_code >= 400:
+                log.warning("submit failed [%s]: %s", r.status_code, r.text[:200])
+                return None
+            return r.json()
+        except Exception as exc:
+            log.warning("submit failed: %s", exc)
+            return None
 
     def candles(
         self,
@@ -180,6 +208,7 @@ class ArenaClient:
 #   - reason: 1–280 chars; control / bidi-override codepoints stripped server-side
 #   - Symbols you don't include keep their existing position
 #   - Stop-loss / take-profit are server-side regardless
+
 
 def decide(snap: dict[str, Any]) -> list[dict[str, Any]]:
     """Your bot's brain.
@@ -264,7 +293,9 @@ import json
 
 from hermes_parse import safe_json_parse
 
-HERMES_BASE_URL = (os.environ.get("HERMES_BASE_URL") or "http://127.0.0.1:8642").rstrip("/")
+HERMES_BASE_URL = (os.environ.get("HERMES_BASE_URL") or "http://127.0.0.1:8642").rstrip(
+    "/"
+)
 HERMES_MODEL = os.environ.get("HERMES_MODEL", "hermes-agent")
 HERMES_API_KEY = os.environ.get("HERMES_API_KEY") or None  # None when local + no auth
 BOT_PERSONA = os.environ.get(
@@ -351,13 +382,18 @@ def hermes_decide(snap: dict[str, Any]) -> list[dict[str, Any]]:
             json={
                 "model": HERMES_MODEL,
                 "messages": [
-                    {"role": "system", "content": HERMES_SYSTEM_PROMPT_TEMPLATE.format(persona=BOT_PERSONA)},
+                    {
+                        "role": "system",
+                        "content": HERMES_SYSTEM_PROMPT_TEMPLATE.format(
+                            persona=BOT_PERSONA
+                        ),
+                    },
                     {"role": "user", "content": json.dumps(user_payload)},
                 ],
                 "response_format": {"type": "json_object"},
                 "temperature": 0.6,
             },
-            timeout=30,
+            timeout=120,
         )
         r.raise_for_status()
         content = r.json()["choices"][0]["message"]["content"]
@@ -450,7 +486,7 @@ def _hermes_market_commentary(snap: dict[str, Any]) -> Optional[str]:
                 "temperature": 0.85,
                 "max_tokens": 120,
             },
-            timeout=20,
+            timeout=60,
         )
         r.raise_for_status()
         text = r.json()["choices"][0]["message"]["content"]
@@ -483,7 +519,9 @@ def _synthesize_heartbeat(snap: dict[str, Any]) -> Optional[dict[str, Any]]:
         # Cycle through the static reasons by current cycle number so the
         # heartbeat doesn't repeat the exact same line back-to-back when
         # Hermes is offline.
-        idx = int(snap.get("server", {}).get("currentCycle", 0)) % len(_HEARTBEAT_FALLBACK_REASONS)
+        idx = int(snap.get("server", {}).get("currentCycle", 0)) % len(
+            _HEARTBEAT_FALLBACK_REASONS
+        )
         reason = _HEARTBEAT_FALLBACK_REASONS[idx]
 
     return {
@@ -540,8 +578,26 @@ def main() -> None:
 
     log.info(
         "starting agent loop: agent=%s interval=%ds base_url=%s",
-        cfg.agent_id, cfg.interval_sec, cfg.base_url,
+        cfg.agent_id,
+        cfg.interval_sec,
+        cfg.base_url,
     )
+
+    # Surface the model that will be reported on every /decision submission.
+    # If the operator never set ARENA_DISPLAY_MODEL (and HERMES_MODEL isn't
+    # set either), warn loudly so they can opt in — viewers can't see what's
+    # driving the bot until this is filled in.
+    if cfg.display_model:
+        log.info("dashboard model attribution: %s", cfg.display_model)
+    else:
+        log.warning(
+            "ARENA_DISPLAY_MODEL is not set — your decisions will be submitted "
+            "without a model field, and the dashboard chat row will omit "
+            "'MODEL · <name>' under your messages. Set ARENA_DISPLAY_MODEL in "
+            "your .env to whatever is actually driving you "
+            "(e.g. claude-sonnet-4-5, gpt-5-mini, gemini-2.0-flash, "
+            "llama-3.3-70b-instruct)."
+        )
 
     last_cycle = -1
     while _running:
@@ -559,17 +615,35 @@ def main() -> None:
 
         next_cycle = snap["server"]["acceptingDecisionsForCycle"]
         if next_cycle > last_cycle:
+            rejections = snap.get("lastCycleRejections")
+            if rejections:
+                for rj in rejections if isinstance(rejections, list) else [rejections]:
+                    log.warning(
+                        "last cycle rejection: %s — %s",
+                        rj.get("reason"),
+                        rj.get("message", ""),
+                    )
+
+            status = snap.get("status", "ACTIVE")
+            if status == "SUSPENDED":
+                log.warning("agent SUSPENDED (drawdown > 20%%) — skipping submission")
+                last_cycle = next_cycle
+                continue
+
             try:
                 decisions = decide(snap)
                 if decisions:
                     resp = client.submit(decisions)
-                    log.info(
-                        "submitted %d decision(s) for cycle %s (replaced=%s, NAV=$%.2f)",
-                        len(decisions),
-                        resp.get("targetCycle"),
-                        resp.get("replaced"),
-                        snap["portfolio"]["portfolioValue"],
-                    )
+                    if resp:
+                        log.info(
+                            "submitted %d decision(s) for cycle %s (replaced=%s, NAV=$%.2f)",
+                            len(decisions),
+                            resp.get("targetCycle"),
+                            resp.get("replaced"),
+                            snap["portfolio"]["portfolioValue"],
+                        )
+                    else:
+                        log.warning("submit returned empty for cycle %s", next_cycle)
                 else:
                     log.info(
                         "no decisions this cycle (cycle=%d, NAV=$%.2f, holding)",
